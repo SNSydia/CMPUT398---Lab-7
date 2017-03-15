@@ -17,26 +17,6 @@
 			    }                                                                     \
         } while (0)
 
-__global__ void simple_total(float *input, float *output, int len) {
-
-	unsigned int t = threadIdx.x;
-	unsigned int start = 2 * blockIdx.x*BLOCK_SIZE;
-
-	__shared__ float partialSum[BLOC_SIZE * 2];
-
-	partialSum[t] = input[start + t];
-	partialSum[BLOCK_SIZE + t] = input[start + BLOCK_SIZE + t];
-
-	for (unsigned int stride = 1; stride <= blockDim.x; stride *= 2)
-	{
-		__syncthreads();
-		if (t % stride == 0)
-			partialSum[2 * t] += partialSum[2 * t + stride];
-	}
-
-	if (t == 0)
-		output[blockIdx.x] = partialSum[0];
-}
 
 __global__ void total(float *input, float *output, int len) {
 

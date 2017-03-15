@@ -14,35 +14,48 @@
     if (err != cudaSuccess) {                                             \
       wbLog(ERROR, "Failed to run stmt ", #stmt);                         \
       return -1;                                                          \
-				    }                                                                     \
-          } while (0)
+			    }                                                                     \
+        } while (0)
+
 
 __global__ void total(float *input, float *output, int len) {
+
+	unsigned int t = threadIdx.x;
+    unsigned int start = 2 * blockIdx.x * BLOCK_SIZE;
+
 	// TODO: Load a segment of the input vector into shared memory
-	__shared__ float partialSum[2 * BLOCK_SIZE];
-	unsigned int t = threadIdx.x, start = 2 * blockIdx.x * BLOCK_SIZE;
-	if (start + t < len)
-		partialSum[t] = input[start + t];
-	else
-		partialSum[t] = 0;
-	if (start + BLOCK_SIZE + t < len)
-		partialSum[BLOCK_SIZE + t] = input[start + BLOCK_SIZE + t];
-	else
-		partialSum[BLOCK_SIZE + t] = 0;
+
+    __shared__ float partialSum[BLOCK_SIZE * 2];
+
+
 	// TODO: Traverse the reduction tree
-	for (unsigned int stride = BLOCK_SIZE; stride >= 1; stride >>= 1) {
-		__syncthreads();
-		if (t < stride)
-			partialSum[t] += partialSum[t + stride];
-	}
+
+	if (start + t < len)
+        partialSum[t] = input[start + t];
+	else partialSum[t] = 0.0;
+
+	if (start + t + BLOCK_SIZE < len)
+        partialSum[t + BLOCK_SIZE] = input[start + t + BLOCK_SIZE];
+	else partialSum[t + BLOCK_SIZE] = 0.0;
+
+    __syncthreads();
+
+    for (int stride = BLOCK_SIZE; stride >= 1; stride /= 2)
+    {
+		if (t < stride) partialSum[t] += partialSum[t + stride];
+
+        __syncthreads();
+    }
+
 	// TODO: Write the computed sum of the block to the output vector at the
 	// correct index
+
 	if (t == 0)
-		output[blockIdx.x] = partialSum[0];
+        output[blockIdx.x] = partialSum[0];
+
 }
 
 int main(int argc, char **argv) {
-	int ii;
 	wbArg_t args;
 	float *hostInput;  // The input 1D list
 	float *hostOutput; // The output list
@@ -72,33 +85,38 @@ int main(int argc, char **argv) {
 
 	wbTime_start(GPU, "Allocating GPU memory.");
 	// TODO: Allocate GPU memory here
-	cudaMalloc(&deviceInput, sizeof(float) * numInputElements);
-	cudaMalloc(&deviceOutput, sizeof(float) * numOutputElements);
+
+	cudaMalloc(&deviceInput, numInputElements * sizeof(float));
+    cudaMalloc(&deviceOutput, numOutputElements * sizeof(float));
 
 	wbTime_stop(GPU, "Allocating GPU memory.");
 
 	wbTime_start(GPU, "Copying input memory to the GPU.");
 	// TODO: Copy memory to the GPU here
-	cudaMemcpy(deviceInput, hostInput, sizeof(float) * numInputElements,
-		cudaMemcpyHostToDevice);
+
+	cudaMemcpy(deviceInput, hostInput, sizeof(float) * numInputElements, cudaMemcpyHostToDevice);
+    cudaMemcpy(deviceOutput, hostOutput, sizeof(float) * numOutputElements, cudaMemcpyHostToDevice);
+
 
 	wbTime_stop(GPU, "Copying input memory to the GPU.");
 	// TODO: Initialize the grid and block dimensions here
-	dim3 dimGrid(numOutputElements, 1, 1);
-	dim3 dimBlock(BLOCK_SIZE, 1, 1);
+	dim3 dimBlock(BLOCK_SIZE, 1);
+    dim3 dimGrid(((numInputElements + 1) / (BLOCK_SIZE) + 1), 1, 1);
 
 	wbTime_start(Compute, "Performing CUDA computation");
 	// TODO: Launch the GPU Kernel here
-	total << <dimGrid, dimBlock >> >(deviceInput, deviceOutput,
-		numInputElements);
+
+    total<<<dimGrid, dimBlock >>>(deviceInput, deviceOutput, numInputElements);
 
 	cudaDeviceSynchronize();
 	wbTime_stop(Compute, "Performing CUDA computation");
 
 	wbTime_start(Copy, "Copying output memory to the CPU");
 	// TODO: Copy the GPU memory back to the CPU here
-	cudaMemcpy(hostOutput, deviceOutput, sizeof(float) * numOutputElements,
-		cudaMemcpyDeviceToHost);
+
+    cudaMemcpy(hostOutput, deviceOutput,
+        numOutputElements * sizeof(float),
+        cudaMemcpyDeviceToHost);
 
 	wbTime_stop(Copy, "Copying output memory to the CPU");
 
@@ -109,14 +127,16 @@ int main(int argc, char **argv) {
 	* recursively and support any size input. For simplicity, we do not
 	* require that for this lab.
 	********************************************************************/
-	for (ii = 1; ii < numOutputElements; ii++) {
-		hostOutput[0] += hostOutput[ii];
-	}
+
+	for (int i = 1; i < numOutputElements; i++)
+		hostOutput[0] += hostOutput[i];
+
 
 	wbTime_start(GPU, "Freeing GPU Memory");
 	// TODO: Free the GPU memory here
+
 	cudaFree(deviceInput);
-	cudaFree(deviceOutput);
+    cudaFree(deviceOutput);
 
 	wbTime_stop(GPU, "Freeing GPU Memory");
 

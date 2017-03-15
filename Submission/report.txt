@@ -1,0 +1,6 @@
+1. numInputs * log(BlockSize) FLOPS are performed
+2. 2 * numInputs reads are performed
+3. There are (numInputs/BlockSize) global writes performed
+4. It synchronises at log(blocksize) 
+NSIGHT says there are 312,512 global memory read requests, with a sizeof(float) == 8 bytes, this would mean 2,500,096 bytes read. There are 9773 global write requests, meaning there are 71,184 bytes written. 
+This is significant as the ratio of bytes read to written is approximately 256:1, which implies that, 256 = [2 * numInputs] /  [numInputs/BlockSize].
